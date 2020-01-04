@@ -303,6 +303,7 @@ func (c *StateMvCommand) Run(args []string) int {
 						fromProviderAddr, // in this case, we bring the provider along as if we were moving the whole resource
 					)
 					rs = stateTo.Resource(resourceAddr)
+
 				}
 
 				rs.Instances[addrTo.Resource.Key] = is
@@ -313,6 +314,24 @@ func (c *StateMvCommand) Run(args []string) int {
 				msgInvalidSource,
 				fmt.Sprintf("Cannot move %s: Terraform doesn't know how to move this object.", rawAddrFrom),
 			))
+		}
+
+		// Look for any dependencies that may be effected and
+		// remove them to ensure they are recreated in full.
+		for _, mod := range stateTo.Modules {
+			for _, res := range mod.Resources {
+				for _, ins := range res.Instances {
+					for _, dep := range ins.Current.Dependencies {
+						// check both directions here, since we may be moving
+						// an instance which is in a resource, or a module
+						// which can contain a resource.
+						if dep.TargetContains(rawAddrFrom) || rawAddrFrom.TargetContains(dep) {
+							ins.Current.Dependencies = nil
+							break
+						}
+					}
+				}
+			}
 		}
 	}
 
